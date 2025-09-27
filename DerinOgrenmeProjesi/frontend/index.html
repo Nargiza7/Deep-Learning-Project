@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>BETON-YEŞİL: Şehirlerimizi Yeşillendiren AI</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      background-color: #f0fff4;
+    }
+
+    h1 {
+      font-size: 2.5rem;
+      color: #2e7d32;
+      text-align: center;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.2);
+      margin-top: 20px;
+      margin-bottom: 10px;
+      background-color: #e6ffe6;
+      padding: 15px;
+    }
+
+    #content {
+      display: flex;
+      flex-direction: row;
+      gap: 20px;
+      padding: 20px;
+    }
+
+    #map {
+      flex: 2;
+      height: 75vh;
+      border: 2px solid #ccc;
+      border-radius: 10px;
+    }
+
+    #results {
+      flex: 1;
+      background-color: #f9f9f9;
+      border-radius: 10px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+      overflow-y: auto;
+      padding: 20px;
+      max-height: 70vh;
+    }
+
+    .section-title {
+      color: #28a745;
+      margin-top: 20px;
+      margin-bottom: 10px;
+      border-bottom: 2px solid #c8e6c9;
+      padding-bottom: 5px;
+    }
+
+    .design-output img {
+      max-width: 100%;
+      height: auto;
+      display: block;
+      margin-top: 15px;
+      border-radius: 8px;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    ul {
+      list-style-type: none;
+      padding: 0;
+    }
+
+    li {
+      margin-bottom: 5px;
+    }
+
+    #loading {
+      color: #007bff;
+      font-weight: bold;
+      margin-top: 15px;
+    }
+
+    #error {
+      color: red;
+      font-weight: bold;
+      margin-top: 15px;
+    }
+
+    @media (max-width: 768px) {
+      #content {
+        flex-direction: column;
+      }
+
+      #map, #results {
+        max-height: none;
+        height: auto;
+      }
+    }
+  </style>
+</head>
+<body>
+  <h1>🌿 "BETON-YEŞİL": Şehirlerdeki Beton Yüzeyleri Bitkilendiren AI</h1>
+
+  <div id="content">
+    <div id="map"></div>
+
+    <div id="results">
+      <h2 class="section-title">📊 Sonuçlar</h2>
+
+      <p id="selected-area-info" style="color: #555; font-style: italic;">
+        Haritada bir bölge seçin...
+      </p>
+
+      <div id="loading" style="display:none;">Tasarım oluşturuluyor...</div>
+      <div id="error" style="display:none;"></div>
+
+      <div id="design-output" style="display:none;">
+        <h3 style="color: #2e7d32;">🎨 Tasarım Önerisi</h3>
+        <img id="design-image" style="max-width: 200px;" src="" alt="Önerilen Yeşil Tasarım"/>
+        <p id="design-description" style="margin-top: 10px; color: #444;"></p>
+      </div>
+
+      <div id="plants-output" style="display:none; margin-top: 25px;">
+        <h3 style="color: #2e7d32;">🌱 Önerilen Bitkiler</h3>
+        <ul id="plant-list" style="padding-left: 20px; color: #333;"></ul>
+      </div>
+
+      <div id="benefits-output" style="display:none; margin-top: 25px;">
+        <h3 style="color: #2e7d32;">🌤️ Tahmini Faydalar</h3>
+        <ul style="color: #444;">
+          <li>Tahmini Sıcaklık Düşüşü: <span id="temp-reduction" style="font-weight: bold;"></span></li>
+          <li>Tahmini CO2 Emilimi: <span id="co2-absorption" style="font-weight: bold;"></span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script>
+    var map = L.map('map').setView([40.783, 30.407], 12);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    const selectedAreaInfo = document.getElementById('selected-area-info');
+    const loadingDiv = document.getElementById('loading');
+    const errorDiv = document.getElementById('error');
+    const designOutputDiv = document.getElementById('design-output');
+    const designImage = document.getElementById('design-image');
+    const designDescription = document.getElementById('design-description');
+    const plantsOutputDiv = document.getElementById('plants-output');
+    const plantList = document.getElementById('plant-list');
+    const benefitsOutputDiv = document.getElementById('benefits-output');
+    const tempReduction = document.getElementById('temp-reduction');
+    const co2Absorption = document.getElementById('co2-absorption');
+
+    fetch('http://127.0.0.1:5000/api/map-data')
+      .then(response => response.json())
+      .then(data => {
+        data.heat_spots.forEach(spot => {
+          L.circle([spot.coords[0], spot.coords[1]], {
+            color: 'red',
+            fillColor: '#f03',
+            fillOpacity: spot.intensity,
+            radius: 200
+          }).addTo(map)
+            .bindPopup(`<b>Isı Yoğunluğu:</b> ${spot.intensity * 100}%`);
+        });
+
+        data.areas.forEach(area => {
+          var marker = L.marker([area.coords[0], area.coords[1]], {
+            title: area.name,
+            alt: area.id,
+            className: 'area-marker'
+          }).addTo(map);
+
+          marker.bindPopup(`<b>${area.name}</b><br>Tip: ${area.area_type === 'building' ? 'Bina Cephesi' : 'Yol Kenarı'}<br>Tasarım İçin Tıkla`);
+
+          marker.on('click', function () {
+            handleAreaSelection(area.id, area.name);
+          });
+        });
+      })
+      .catch(error => {
+        console.error('Harita verileri çekilirken hata oluştu:', error);
+        errorDiv.style.display = 'block';
+        errorDiv.textContent = 'Harita verileri yüklenemedi.';
+      });
+
+    async function handleAreaSelection(areaId, areaName) {
+      selectedAreaInfo.textContent = `Seçilen Alan: ${areaName}`;
+      loadingDiv.style.display = 'block';
+      errorDiv.style.display = 'none';
+      designOutputDiv.style.display = 'none';
+      plantsOutputDiv.style.display = 'none';
+      benefitsOutputDiv.style.display = 'none';
+
+      try {
+        const response = await fetch(`http://127.0.0.1:5000/api/generate-recommendation/${areaId}`);
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        const data = await response.json();
+        console.log("Backend'den gelen veri:", data);
+
+        designImage.src = data.design.design_url;
+        designDescription.textContent = data.design.description;
+        designOutputDiv.style.display = 'block';
+
+        plantList.innerHTML = '';
+        data.plants.forEach(plant => {
+          const li = document.createElement('li');
+          li.innerHTML = `<strong>${plant.name}:</strong> ${plant.description}`;
+          plantList.appendChild(li);
+        });
+        plantsOutputDiv.style.display = 'block';
+
+        tempReduction.textContent = data.benefits.temp_reduction_celsius + '°C';
+        co2Absorption.textContent = data.benefits.co2_absorption_kg_year + ' kg/yıl';
+        benefitsOutputDiv.style.display = 'block';
+
+      } catch (e) {
+        console.error("Tasarım oluşturulurken hata oluştu:", e);
+        errorDiv.style.display = 'block';
+        errorDiv.textContent = 'Tasarım oluşturulamadı: ' + e.message;
+      } finally {
+        loadingDiv.style.display = 'none';
+      }
+    }
+  </script>
+</body>
+</html>
